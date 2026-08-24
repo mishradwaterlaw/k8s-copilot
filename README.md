@@ -9,7 +9,7 @@
 
 ---
 
-## 🎯 What Problem Does This Solve?
+##  What Problem Does This Solve?
 
 When a Kubernetes alert triggers at 3:00 AM (e.g. `CrashLoopBackOff` or `OOMKilled`), on-call SREs and platform engineers spend 15–45 minutes manually correlating:
 - Pod lifecycle events (`kubectl get events`)
@@ -25,7 +25,7 @@ When a Kubernetes alert triggers at 3:00 AM (e.g. `CrashLoopBackOff` or `OOMKill
 
 ---
 
-## 🏗️ Architecture
+##  Architecture
 
 ```
 Supervisor Graph (graph.py)
@@ -43,7 +43,7 @@ Supervisor Graph (graph.py)
 
 ---
 
-## 📁 Repository Structure
+##  Repository Structure
 
 ```
 k8s-copilot/
@@ -78,7 +78,7 @@ k8s-copilot/
 
 ---
 
-## 🚀 Quick Start (3 Ways to Run)
+##  Quick Start (3 Ways to Run)
 
 ### Option 1: Interactive Terminal CLI (Recommended for Demos)
 
@@ -137,7 +137,7 @@ helm install k8s-copilot ./helm/k8s-copilot -n copilot-system
 
 ---
 
-## 🧪 Running Automated Tests
+##  Running Automated Tests
 
 ```bash
 pytest tests/ -v
@@ -146,7 +146,7 @@ Runs all 27 unit and integration tests (mocked LLM responses, deterministic exec
 
 ---
 
-## 📊 Observability & Metrics
+##  Observability & Metrics
 
 Prometheus metrics are exposed on `GET /metrics`:
 - `k8s_copilot_investigations_total{status="completed|paused_for_review|failed"}`
@@ -157,7 +157,7 @@ Prometheus metrics are exposed on `GET /metrics`:
 
 ---
 
-## 📜 License
+##  License
 
 MIT License. Designed and built by [mishradwaterlaw](https://github.com/mishradwaterlaw).
 
