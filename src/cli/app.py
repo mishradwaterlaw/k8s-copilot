@@ -163,41 +163,39 @@ def investigate(
                 continue
             break  # Break outer loop when we hit __interrupt__
 
-    # ── Human Review ──────────────────────────────────────────────────────────
-    snapshot = graph.get_state(run_config)
+    # ── Interactive Review & Steering Loop ─────────────────────────────────────
+    while True:
+        snapshot = graph.get_state(run_config)
 
-    if not snapshot.next:
-        # Completed without human review (shouldn't happen normally)
-        _print_final(snapshot.values, thread_id)
-        return
+        if not snapshot.next:
+            # Investigation reached completion
+            console.print()
+            _print_final(snapshot.values, thread_id)
+            return
 
-    # Extract the interrupt payload — what the agent is asking us to review
-    pending = snapshot.tasks[0].interrupts[0].value
+        # Extract the interrupt payload
+        pending = snapshot.tasks[0].interrupts[0].value
 
-    console.print()
-    _print_review_panel(pending)
-    console.print()
+        console.print()
+        _print_review_panel(pending)
+        console.print()
 
-    # Rich Prompt for human input — styled, with a default option shown
-    decision = Prompt.ask(
-        "[bold yellow]  Decision[/bold yellow] [dim](type 'approve' or enter your own root cause)[/dim]",
-        default="approve",
-        console=console,
-    )
+        decision = Prompt.ask(
+            "[bold yellow]  Decision[/bold yellow] [dim](type 'approve' to accept, 'override: <text>', or enter feedback to re-investigate)[/dim]",
+            default="approve",
+            console=console,
+        )
 
-    console.print()
-    console.print("  [dim]Resuming investigation...[/dim]")
+        console.print()
+        console.print("  [dim]Resuming investigation with decision...[/dim]")
 
-    # Resume the graph with the human's decision
-    final_state = graph.invoke(Command(resume=decision), config=run_config)
-
-    console.print()
-    _print_final(final_state, thread_id)
+        # Resume the graph with human decision or feedback
+        graph.invoke(Command(resume=decision), config=run_config)
 
 
 # ── Display Helpers ───────────────────────────────────────────────────────────
 
-def _to_str(val: Any) -> str:
+def _to_str(val: any) -> str:
     """Safely convert any value (list, dict, None, str) to a clean printable string."""
     if val is None:
         return ""

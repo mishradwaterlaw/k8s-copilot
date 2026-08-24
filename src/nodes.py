@@ -60,28 +60,24 @@ def call_deploy_investigator(state: InvestigationState) -> dict:
     # Local imports here (not top-level) to avoid circular imports.
     # nodes.py ← imports ← subgraphs.py (which imports tools.py, providers/).
     # If we imported at the top level, Python's import system could get
-    # into a circular dependency issue. Local imports break the cycle.
-
-    provider = get_provider()
+    # into a circular dependency issue. Local imports br    provider = get_provider()
     subgraph = build_deploy_subgraph(
         provider=provider,
         namespace=state["namespace"],
         pod_name=state["pod_name"],
     )
-    result = subgraph.invoke({"alert": state["alert"]})
+
+    alert_text = state["alert"]
+    if state.get("human_feedback"):
+        alert_text += f"\n[Human Reviewer Feedback/Guidance: '{state['human_feedback']}']"
+
+    result = subgraph.invoke({"alert": alert_text})
     return {"deploy_finding": result["finding"]}
 
 
 def call_log_investigator(state: InvestigationState) -> dict:
     """
     SUPERVISOR NODE: Delegate to the Log Investigator subgraph.
-
-    The Log Investigator is an autonomous tool-calling agent.
-    We seed it with a system prompt (its instructions) and a human
-    message (the alert). From there, it decides what to check.
-
-    Reads:  alert, namespace, pod_name from state
-    Writes: log_finding back to state
     """
     from subgraphs import build_log_subgraph
     from providers import get_provider
@@ -94,16 +90,21 @@ def call_log_investigator(state: InvestigationState) -> dict:
         pod_name=state["pod_name"],
     )
 
-    # The system message gives the agent its persona and rules.
-    # It's injected HERE (in the supervisor node) rather than hardcoded
-    # inside the subgraph — this keeps the subgraph generic and reusable.
+    feedback_prompt = ""
+    if state.get("human_feedback"):
+        feedback_prompt = (
+            f"\n\nIMPORTANT OPERATOR FEEDBACK: The human on-call engineer reviewed previous findings "
+            f"and requested: '{state['human_feedback']}'. Specifically focus your tools and reasoning on this guidance."
+        )
+
     system = SystemMessage(content=(
         f"You are an expert Kubernetes on-call triage agent investigating an alert in namespace '{state['namespace']}'. "
         "Use the available tools to gather concrete evidence:\n"
         "1. Check `get_pod_status` and `get_pod_events` to identify WHICH specific container (app, sidecar, or init-container) is failing.\n"
         "2. Call `get_app_logs(container_name=...)` on the failing container to retrieve the exact error or stack trace.\n"
         "3. Check `get_node_conditions` if node pressure/eviction is possible, and `get_resource_limits` if an OOMKilled crash occurred.\n"
-        "4. Check related pods if needed to verify whether the symptom is isolated or deployment-wide.\n"
+        "4. Check related pods if needed to verify whether the symptom is isolated or deployment-wide."
+        f"{feedback_prompt}\n"
         "Once you have gathered sufficient evidence, respond with ONE precise sentence summarizing "
         "what you found and the evidence — do not call any more tools after you have enough information."
     ))
@@ -120,22 +121,17 @@ def synthesize(state: InvestigationState) -> dict:
     """
     SUPERVISOR NODE: Read both investigators' findings and produce
     a confidence score + root cause hypothesis.
-
-    This is the "judge" that decides whether we have enough evidence
-    (high confidence) or need another investigation loop.
-
-    The output format is strict (CONFIDENCE: / ROOT_CAUSE:) so we
-    can parse it reliably. We use a simple line-by-line parser
-    rather than JSON because the LLM can hallucinate JSON structure
-    but rarely hallucinates a two-line "KEY: value" response when
-    prompted to use exactly that format.
     """
     llm = _get_llm()
+
+    feedback_context = ""
+    if state.get("human_feedback"):
+        feedback_context = f"\nHuman Reviewer Guidance: {state['human_feedback']}"
 
     prompt = f"""You are investigating this Kubernetes alert:
 {state['alert']}
 
-Pod: {state['pod_name']} | Namespace: {state['namespace']}
+Pod: {state['pod_name']} | Namespace: {state['namespace']}{feedback_context}
 
 Deploy Investigator's finding:
 {state['deploy_finding']}
@@ -154,11 +150,6 @@ ROOT_CAUSE: <one sentence best-guess hypothesis, grounded ONLY in the findings a
 
     response = llm.invoke(prompt).content.strip()
 
-    # Parse the structured response.
-    # We parse manually (not with JSON) because:
-    #   1. The format is simple — only two lines to extract
-    #   2. LLMs are reliable at "KEY: value" format, less so at JSON
-    #   3. No import needed, no schema needed, easy to debug
     confidence = 0.0
     root_cause = "Unable to determine root cause."
 
@@ -167,7 +158,6 @@ ROOT_CAUSE: <one sentence best-guess hypothesis, grounded ONLY in the findings a
         if line.startswith("CONFIDENCE:"):
             try:
                 confidence = float(line.replace("CONFIDENCE:", "").strip())
-                # Clamp to valid range [0.0, 1.0] in case the LLM hallucinates
                 confidence = max(0.0, min(1.0, confidence))
             except ValueError:
                 confidence = 0.0
@@ -183,23 +173,15 @@ ROOT_CAUSE: <one sentence best-guess hypothesis, grounded ONLY in the findings a
 
 def human_review(state: InvestigationState) -> dict:
     """
-    SUPERVISOR NODE: Pause the graph and wait for a human decision.
+    SUPERVISOR NODE: Pause the graph and wait for a human decision or steering feedback.
 
-    interrupt() is a LangGraph primitive that:
-      1. Saves the current state to the checkpointer (SQLite)
-      2. Raises a special exception that the graph runner catches
-      3. Returns control to the caller (FastAPI endpoint / CLI)
-      4. The graph is now PAUSED — it will not advance until resumed
-
-    When the human provides a decision (via API or CLI), the graph
-    is resumed with Command(resume=decision) and this node continues
-    from where it left off, with `decision` as the return value of interrupt().
-
-    This is a coroutine-like pattern: interrupt() is like yield —
-    it yields control to the caller and resumes later with a value.
+    Three response types:
+      1. 'approve' / 'ok' / 'yes' -> Accepts proposed root cause -> completes graph
+      2. 'override: <text>'       -> Manually overrides root cause -> completes graph
+      3. Any other text            -> Re-investigate! Feeds human instruction back to agents
     """
-    decision = interrupt({
-        "question": "Review the proposed root cause. Type 'approve' to accept, or enter an override.",
+    decision_raw = interrupt({
+        "question": "Review the proposed root cause. Type 'approve' to accept, 'override: <text>' to set manually, or enter feedback to re-investigate.",
         "proposed_root_cause": state["root_cause"],
         "confidence": state["confidence"],
         "deploy_finding": state["deploy_finding"],
@@ -209,13 +191,21 @@ def human_review(state: InvestigationState) -> dict:
         "iterations_run": state["iteration_count"],
     })
 
-    if decision.strip().lower() == "approve":
-        # Human approved — no state change needed.
-        # The root_cause and confidence already in state are correct.
-        return {}
+    decision = str(decision_raw).strip()
+    decision_lower = decision.lower()
+
+    if decision_lower in ("approve", "ok", "yes", "y", "accept"):
+        return {"feedback_action": "approve"}
+    elif decision_lower.startswith("override:"):
+        manual_root_cause = decision.split("override:", 1)[1].strip()
+        return {
+            "root_cause": manual_root_cause,
+            "feedback_action": "override",
+        }
     else:
-        # Human provided an override root cause.
-        # Replace the AI's hypothesis with the human's correction.
-        # This is important for the audit trail — the final root_cause
-        # reflects what a human verified, not just what the AI guessed.
-        return {"root_cause": decision.strip()}
+        # Operator entered steering feedback (e.g. "check again", "look at db host")
+        return {
+            "human_feedback": decision,
+            "feedback_action": "reinvestigate",
+            "iteration_count": 0,  # Reset loop budget so agents have full rounds with human guidance
+        }

@@ -54,15 +54,6 @@ import config
 def route_after_synthesize(state: InvestigationState) -> str | list[str]:
     """
     Conditional router: after synthesize(), decide what happens next.
-
-    Returns:
-      - "human_review" string → go to single node
-      - ["call_deploy_investigator", "call_log_investigator"] list → fan out to BOTH
-        (LangGraph interprets a list return from a conditional edge as "run all of these next")
-
-    This is the loop control:
-      High confidence OR max iterations hit → done, send to human review
-      Low confidence AND iterations remaining → loop back for another round
     """
     if state["confidence"] >= config.CONFIDENCE_THRESHOLD:
         return "human_review"
@@ -72,15 +63,22 @@ def route_after_synthesize(state: InvestigationState) -> str | list[str]:
     return ["call_deploy_investigator", "call_log_investigator"]
 
 
+def route_after_human_review(state: InvestigationState) -> str | list[str]:
+    """
+    Conditional router: after human_review(), decide whether to complete or re-investigate.
+    
+    If the operator provided feedback/steering (e.g. "check again", "look at sidecar"),
+    loop back to the parallel sub-agents armed with the operator's instructions!
+    """
+    action = state.get("feedback_action", "approve")
+    if action == "reinvestigate":
+        return ["call_deploy_investigator", "call_log_investigator"]
+    return END
+
+
 def build_graph():
     """
     Assemble and compile the supervisor graph.
-
-    Called ONCE at startup (in main.py and cli/app.py) and reused
-    across all requests. Graph compilation is not cheap — it validates
-    the graph structure, resolves node names, etc.
-
-    Returns a compiled CompiledStateGraph that has an .invoke() and .stream() method.
     """
     builder = StateGraph(InvestigationState)
 
@@ -91,22 +89,18 @@ def build_graph():
     builder.add_node("human_review", human_review)
 
     # START → BOTH investigators in parallel.
-    # When you add_edge(START, two different nodes), LangGraph runs them
-    # concurrently (as threads). Their results are merged into state
-    # using each field's reducer before the next node runs.
     builder.add_edge(START, "call_deploy_investigator")
     builder.add_edge(START, "call_log_investigator")
 
     # Both investigators → synthesize.
-    # LangGraph waits for BOTH parallel branches to finish before synthesize runs.
-    # This is an implicit "join" — you don't have to code it. LangGraph handles it.
     builder.add_edge("call_deploy_investigator", "synthesize")
     builder.add_edge("call_log_investigator", "synthesize")
 
     # Conditional routing after synthesize
     builder.add_conditional_edges("synthesize", route_after_synthesize)
 
-    builder.add_edge("human_review", END)
+    # Conditional routing after human_review (approve/override -> END, feedback -> re-investigate)
+    builder.add_conditional_edges("human_review", route_after_human_review)
 
     # Set up the persistent checkpointer
     conn = sqlite3.connect(config.CHECKPOINT_DB_PATH, check_same_thread=False)
