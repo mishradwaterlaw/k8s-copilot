@@ -1,0 +1,63 @@
+{{/*
+role.yaml — Namespace-scoped Role (rendered when rbac.clusterWide=false, the DEFAULT).
+
+CONCEPT: ROLE vs CLUSTERROLE
+══════════════════════════════
+A Role grants permissions within a SINGLE namespace.
+A ClusterRole grants permissions across ALL namespaces (or for cluster-level resources).
+
+We default to Role (namespace-scoped) because:
+  - Least privilege: the agent can only read from one namespace
+  - Blast radius is contained: even if compromised, can't read all namespaces
+  - More explicit: deploying to multiple namespaces requires a conscious decision
+
+When might you need clusterWide=true?
+  - Investigating alerts that could be in ANY namespace (true multi-tenant copilot)
+  - Reading cluster-level resources (nodes, namespaces — though we don't need these)
+
+CONCEPT: KUBERNETES RBAC RESOURCES AND VERBS
+══════════════════════════════════════════════
+Rules have three parts:
+  apiGroups: which API group the resource belongs to
+    "" (empty string) → "core" API group (pods, events, services, etc.)
+    "apps"            → Deployments, ReplicaSets, DaemonSets, StatefulSets
+  resources: which resource types to grant access to
+  verbs: what operations are allowed
+
+Safe read-only verbs used here:
+  "get"   → read a single resource by name
+  "list"  → list all resources of this type in the namespace
+  "watch" → receive streaming updates (we don't use this, but useful for operators)
+
+We explicitly do NOT grant:
+  "create", "update", "patch", "delete", "deletecollection", "escalate", "bind"
+This means the copilot can NEVER modify or destroy cluster resources.
+*/}}
+
+{{- if and .Values.rbac.create (not .Values.rbac.clusterWide) }}
+# This block only renders when rbac.clusterWide=false (the default).
+# "not" is a Sprig/Helm function that negates a boolean.
+# "and x y" is Helm's &&: only true when BOTH are true.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+rules:
+  # ── Core API group (apiGroup: "") ─────────────────────────────────────────
+  - apiGroups: [""]
+    resources:
+      - pods         # List pods, get pod status
+      - pods/log     # Fetch container log output
+      - events       # Read Kubernetes events (scheduling, crashes, backoffs)
+    verbs: ["get", "list"]
+
+  # ── Apps API group ────────────────────────────────────────────────────────
+  - apiGroups: ["apps"]
+    resources:
+      - deployments  # Check deployment spec, replica counts, rollout status
+      - replicasets  # Cross-reference replica sets to find owner deployments
+    verbs: ["get", "list"]
+{{- end }}

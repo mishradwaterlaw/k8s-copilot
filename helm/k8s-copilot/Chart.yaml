@@ -1,0 +1,78 @@
+# ════════════════════════════════════════════════════════════════════════════
+# Chart.yaml — Helm chart metadata
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: WHAT IS HELM?
+# ══════════════════════
+# Helm is the package manager for Kubernetes — like apt/brew but for K8s.
+# A "Helm chart" is a directory of templated YAML files that describe a
+# complete Kubernetes application (Deployments, Services, RBAC, etc.).
+#
+# Without Helm:
+#   - Maintain separate YAML files for dev/staging/prod
+#   - Duplicate nearly identical YAML with small differences
+#   - Manual `kubectl apply -f` for every file, in the right order
+#
+# With Helm:
+#   helm install k8s-copilot ./helm/k8s-copilot \
+#     --namespace copilot-system \
+#     --create-namespace
+#   → applies all manifests in the right order, with values substituted
+#
+# helm upgrade → updates a running release
+# helm rollback → reverts to a previous release
+# helm uninstall → deletes everything the chart created
+#
+# CONCEPT: CHART.YAML REQUIRED FIELDS
+# ═════════════════════════════════════
+# Helm requires exactly these fields. It uses them for:
+#   - The Helm registry/repository listing
+#   - Compatibility checks (kubeVersion)
+#   - Dependency resolution (dependencies block, not used here)
+# ════════════════════════════════════════════════════════════════════════════
+
+apiVersion: v2          # Helm chart API version. v2 = Helm 3 (current). v1 = Helm 2 (legacy, EOL).
+                        # Always use v2 for new charts.
+
+name: k8s-copilot       # The chart name. Used in resource name generation via helpers.
+
+description: >
+  Agentic Kubernetes investigation assistant. Uses LangGraph multi-agent
+  orchestration to investigate pod alerts, synthesize root causes, and
+  support human-in-the-loop review. Built with Gemini LLM + FastAPI.
+
+# Chart type: "application" (deployable app) vs "library" (shared templates only).
+# We're an application.
+type: application
+
+# Chart version: follows Semantic Versioning (semver.org).
+# Increment this when you change the chart itself (templates, defaults).
+# SEPARATE from the application version below.
+# Breaking change to chart → bump major (2.0.0)
+# New feature in chart    → bump minor (1.1.0)
+# Bug fix in chart        → bump patch (1.0.1)
+version: 1.0.0
+
+# Application version: the version of the software this chart deploys.
+# This is what gets set as a label on pods so you can see what's running.
+# Should match the Docker image tag you're deploying.
+appVersion: "2.0.0"
+
+# Minimum Kubernetes version required.
+# Our chart uses nothing exotic, but 1.19 is a safe modern baseline
+# (introduced Ingress v1, stable HPA, etc.)
+kubeVersion: ">=1.19.0-0"
+
+keywords:
+  - kubernetes
+  - ai
+  - agent
+  - langgraph
+  - devops
+  - observability
+
+home: https://github.com/mishradwaterlaw/k8s-copilot
+
+maintainers:
+  - name: mishradwaterlaw
+    url: https://github.com/mishradwaterlaw

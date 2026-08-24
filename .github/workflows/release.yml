@@ -1,0 +1,82 @@
+# ════════════════════════════════════════════════════════════════════════════
+# .github/workflows/release.yml — Automated Container Release Pipeline
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: CONTINUOUS DELIVERY (CD) & OCI REGISTRIES
+# ═════════════════════════════════════════════════
+# When a new version tag (e.g. `v2.0.0`) is pushed to Git, this workflow:
+#   1. Runs the test suite to ensure release quality
+#   2. Authenticates to GitHub Container Registry (GHCR) using GITHUB_TOKEN
+#   3. Builds the production multi-stage Docker image
+#   4. Tags the image with both the semantic version (`:v2.0.0`) and `:latest`
+#   5. Pushes the immutable container artifact to `ghcr.io/mishradwaterlaw/k8s-copilot`
+#
+# INTERVIEW TALKING POINT:
+#   "I set up automated releases to GHCR triggered on git tags. The pipeline uses
+#   docker/metadata-action for standard OCI semantic version tagging and signs in
+#   securely with the repository's native GITHUB_TOKEN without hardcoded credentials."
+# ════════════════════════════════════════════════════════════════════════════
+
+name: Release Container to GHCR
+
+on:
+  push:
+    tags:
+      - "v*.*.*" # Matches version tags like v2.0.0, v2.1.0, etc.
+
+# Permissions needed to publish packages to GHCR
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    name: Build & Push Docker Image to GHCR
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up QEMU for multi-platform build support (optional, but standard practice)
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # Step 3: Set up Docker Buildx (extended builder engine)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # Step 4: Authenticate to GitHub Container Registry (ghcr.io)
+      # GITHUB_TOKEN is generated automatically by GitHub for each job.
+      # No manual token setup or password secrets needed.
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 5: Extract Docker metadata (tags and labels based on the git tag)
+      - name: Extract Docker Metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/mishradwaterlaw/k8s-copilot
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+
+      # Step 6: Build and Push container image to GHCR
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

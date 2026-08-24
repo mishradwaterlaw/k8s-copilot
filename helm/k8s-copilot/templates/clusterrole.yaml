@@ -1,0 +1,43 @@
+{{/*
+clusterrole.yaml — Cluster-wide permissions (OPT-IN via rbac.clusterWide=true).
+
+This is the SAME permissions as role.yaml, but scoped to ALL namespaces.
+Enable with: helm install ... --set rbac.clusterWide=true
+
+INTERVIEW TALKING POINT:
+  "I make the person deploying explicitly set rbac.clusterWide=true.
+  The act of setting it forces a conscious decision — they're saying
+  'I understand this gives the agent cluster-wide read access.'
+  It's not something that happens silently."
+
+WHEN TO USE THIS:
+  - The copilot needs to investigate pods in namespaces OTHER than its own
+  - You're running the copilot as a centralized platform service
+  - A single copilot deployment serves multiple teams' namespaces
+*/}}
+
+{{- if and .Values.rbac.create .Values.rbac.clusterWide }}
+# Only rendered when rbac.clusterWide=true.
+# When this renders, role.yaml and rolebinding.yaml do NOT render (they check
+# `not .Values.rbac.clusterWide`). One RBAC path is active at a time.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  # Note: NO namespace field. ClusterRole is cluster-scoped, not namespaced.
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources:
+      - pods
+      - pods/log
+      - events
+    verbs: ["get", "list"]
+
+  - apiGroups: ["apps"]
+    resources:
+      - deployments
+      - replicasets
+    verbs: ["get", "list"]
+{{- end }}

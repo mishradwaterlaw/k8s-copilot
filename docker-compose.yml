@@ -1,0 +1,87 @@
+# ════════════════════════════════════════════════════════════════════════════
+# docker-compose.yml — Local development environment for k8s-copilot
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: DOCKER COMPOSE
+# ════════════════════════
+# Docker Compose lets you define a multi-container application in one YAML file.
+# Instead of running 3 separate `docker run` commands with long flags,
+# you write this file once and use:
+#   docker-compose up       → start everything
+#   docker-compose down     → stop and remove containers
+#   docker-compose logs -f  → follow all logs
+#
+# In development, docker-compose replaces Kubernetes (simpler, faster iteration).
+# In production, you'd use Kubernetes (Helm chart, see next phase).
+# ════════════════════════════════════════════════════════════════════════════
+
+version: "3.9"  # docker-compose file format version
+
+services:
+  # ── Main API server ─────────────────────────────────────────────────────────
+  api:
+    # build: tells compose to build from a Dockerfile instead of pulling an image
+    build:
+      context: .          # build context: current directory (where Dockerfile is)
+      dockerfile: Dockerfile
+      target: runtime     # which stage to use — "runtime" (the slim final stage)
+                          # Omitting this would build all stages and use the last one.
+                          # Being explicit is clearer.
+
+    container_name: k8s-copilot-api
+
+    ports:
+      - "8000:8000"
+      # "HOST:CONTAINER" — maps port 8000 on your laptop to port 8000 in the container
+      # This is why the CMD uses 0.0.0.0 (reachable from host) not 127.0.0.1
+
+    environment:
+      # Environment variables injected into the container at runtime.
+      # These OVERRIDE the ENV defaults set in the Dockerfile.
+      - DATA_PROVIDER=${DATA_PROVIDER:-fixture}
+        # ${VAR:-default}: if DATA_PROVIDER env var is set on the host, use it.
+        # Otherwise default to "fixture". This lets you override from terminal:
+        #   DATA_PROVIDER=kube_api docker-compose up
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+        # No default here — if GOOGLE_API_KEY is not set, this will be empty
+        # and the LLM will fail with an auth error. This forces the user to set it.
+      - LLM_MODEL=${LLM_MODEL:-gemini-2.5-flash}
+      - CHECKPOINT_DB_PATH=/app/data/checkpoints.db
+      - KUBE_NAMESPACE=${KUBE_NAMESPACE:-default}
+      - KUBECONFIG=${KUBECONFIG:-}
+
+    volumes:
+      # Volumes persist data beyond container lifecycle.
+      # Without a volume, checkpoints.db is lost every time the container restarts.
+      # Type "named volume": Docker manages the storage location on the host.
+      - copilot_data:/app/data
+
+      # Optional: mount ~/.kube/config for kube_api provider.
+      # Commented out by default — only needed when DATA_PROVIDER=kube_api.
+      # The ":ro" suffix makes it read-only inside the container (safer).
+      # - ${HOME}/.kube:/home/appuser/.kube:ro
+
+    restart: unless-stopped
+    # unless-stopped: restart the container if it crashes,
+    # but NOT if you explicitly stop it with docker-compose stop.
+    # (Options: no, always, on-failure, unless-stopped)
+
+    healthcheck:
+      # Docker's built-in health check — runs inside the container.
+      # This complements the HEALTHCHECK in the Dockerfile (same logic, compose wins).
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s    # run every 30 seconds
+      timeout: 5s      # fail if takes longer than 5s
+      retries: 3       # mark unhealthy after 3 consecutive failures
+      start_period: 15s # don't count failures during the first 15s (startup time)
+
+# ── Named Volumes ─────────────────────────────────────────────────────────────
+# Named volumes are managed by Docker (stored in /var/lib/docker/volumes/).
+# They persist across docker-compose down/up cycles.
+# To delete a volume: docker volume rm k8s-copilot_copilot_data
+volumes:
+  copilot_data:
+    # No extra config — use Docker's default local driver.
+    # In production (K8s), this would be a PersistentVolumeClaim backed
+    # by cloud storage (GCE PD, EBS, Azure Disk) for true persistence.

@@ -1,0 +1,194 @@
+{{/*
+deployment.yaml — The core Kubernetes workload: runs the copilot container.
+
+CONCEPT: DEPLOYMENT
+════════════════════
+A Deployment is a higher-level abstraction over Pods.
+You tell it "run 1 replica of this container spec" and it:
+  - Creates and manages Pods to meet the desired replica count
+  - Replaces Pods that crash (self-healing)
+  - Performs rolling updates when you change the image (zero-downtime deploys)
+  - Keeps revision history so you can roll back with: helm rollback k8s-copilot 1
+
+A Deployment does NOT run the container directly — it creates a ReplicaSet,
+which creates Pods. The chain: Deployment → ReplicaSet → Pod → Container.
+
+CONCEPT: POD TEMPLATE
+══════════════════════
+spec.template is the Pod template — the spec of every Pod the Deployment creates.
+Any change to spec.template triggers a rolling update (new Pods, old Pods gracefully removed).
+
+REPLICA COUNT NOTE:
+  Hard-pinned to {{ .Values.replicaCount }} — which must be 1 when using SQLite.
+  See values.yaml for the full explanation and HA upgrade path.
+*/}}
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+spec:
+  # !! READ BEFORE CHANGING !!
+  # replicaCount MUST stay at 1 while using SQLite (SqliteSaver checkpointer).
+  # SQLite uses file-level locking — multiple pods sharing the same PVC will
+  # corrupt checkpoints.db or deadlock on writes.
+  # To scale horizontally: migrate to langgraph-checkpoint-postgres first.
+  replicas: {{ .Values.replicaCount }}
+
+  selector:
+    # matchLabels: tells the Deployment which Pods it "owns" and manages.
+    # MUST match spec.template.metadata.labels below.
+    # MUST NOT change after first deploy (Kubernetes rejects it — see _helpers.tpl).
+    matchLabels:
+      {{- include "k8s-copilot.selectorLabels" . | nindent 6 }}
+
+  strategy:
+    # RollingUpdate: default. Brings up new Pods before removing old ones.
+    # Ensures zero downtime during updates.
+    # maxSurge: how many extra Pods above replicas are allowed during update.
+    # maxUnavailable: how many Pods can be down at once during update.
+    # With replicas=1, maxUnavailable=0 means the old Pod stays until new one is Ready.
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+
+  template:
+    # Pod template — describes each Pod the Deployment creates
+    metadata:
+      labels:
+        {{- include "k8s-copilot.selectorLabels" . | nindent 8 }}
+        {{- include "k8s-copilot.labels" . | nindent 8 }}
+      annotations:
+        # This annotation causes the Deployment to roll (restart) when the
+        # ConfigMap changes. Without it, config changes require a manual restart.
+        # checksum/config stores a hash of the ConfigMap content.
+        # Any config change → different hash → Kubernetes sees a changed annotation
+        # → triggers a rolling update.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+
+    spec:
+      # The ServiceAccount gives this Pod its Kubernetes identity (for RBAC).
+      serviceAccountName: {{ include "k8s-copilot.serviceAccountName" . }}
+
+      # Security context for the Pod (applies to all containers in the Pod).
+      securityContext:
+        runAsNonRoot: true      # Refuse to run as root — enforced at Pod level
+        runAsUser: 1000         # Match the UID of 'appuser' created in Dockerfile
+        fsGroup: 1000           # Group owner of mounted volumes (allows appuser to write to PVC)
+        # fsGroup: when a volume is mounted, K8s chowns it to this GID.
+        # Without this, the PVC might be mounted as root-owned and appuser can't write.
+
+      containers:
+        - name: copilot
+          # Image: repository + tag. If tag is "", use chart's appVersion.
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+
+          # Security context for THIS container (more specific than Pod-level).
+          securityContext:
+            allowPrivilegeEscalation: false   # Can't gain more privileges than started with
+            readOnlyRootFilesystem: true       # Container filesystem is read-only
+            # readOnlyRootFilesystem: any writes to the container's filesystem
+            # (not the mounted PVC) will fail. This forces all persistent state
+            # through the PVC (our intended design). Catches accidental writes to /tmp etc.
+            capabilities:
+              drop: ["ALL"]    # Drop ALL Linux capabilities. We don't need any.
+              # Linux capabilities are fine-grained root privileges.
+              # "ALL" removes them all, leaving the container with minimal OS access.
+
+          ports:
+            - name: http
+              containerPort: 8000
+              protocol: TCP
+              # Named "http" to match the Service's targetPort: http
+
+          # Load ALL keys from the ConfigMap as environment variables
+          envFrom:
+            - configMapRef:
+                name: {{ include "k8s-copilot.fullname" . }}-config
+
+          # Load the API key from the pre-created Secret (existingSecret pattern)
+          env:
+            - name: GOOGLE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: {{ .Values.googleApiKeySecretKey }}
+                  # optional: true  ← would allow the Pod to start even if Secret is missing
+                  # We leave it as required (default) — fail fast if the secret doesn't exist.
+
+          # ── Probes ────────────────────────────────────────────────────────────
+          # livenessProbe: if this fails N times → kill and restart the container.
+          # Catches: deadlocks, stuck processes, unrecoverable error states.
+          livenessProbe:
+            httpGet:
+              path: {{ .Values.probes.liveness.path }}   # GET /health
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.liveness.failureThreshold }}
+
+          # readinessProbe: if this fails → remove from Service load balancing.
+          # The container stays alive (no restart) but gets no traffic.
+          # Catches: slow startup, temporary overload, mid-investigation load.
+          readinessProbe:
+            httpGet:
+              path: {{ .Values.probes.readiness.path }}
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+            failureThreshold: {{ .Values.probes.readiness.failureThreshold }}
+
+          # ── Resource management ───────────────────────────────────────────────
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+            # toYaml: converts the resources map from values.yaml to YAML text.
+            # nindent 12: indents every line 12 spaces (matching where we are in the YAML).
+
+          # ── Volume mounts ─────────────────────────────────────────────────────
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /app/data
+              # checkpoints.db is written here by SqliteSaver.
+              # This directory is on the PVC → survives Pod restarts.
+            {{- end }}
+            # tmpdir: needed when readOnlyRootFilesystem=true.
+            # Python (and some libraries) need to write temp files.
+            # We mount a small writable tmpfs (in-memory filesystem) for this.
+            - name: tmp
+              mountPath: /tmp
+
+      # ── Volumes ────────────────────────────────────────────────────────────────
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "k8s-copilot.fullname" . }}-data
+        {{- end }}
+        - name: tmp
+          emptyDir:
+            medium: Memory    # In-memory (tmpfs) — fast, doesn't touch disk, cleared on restart
+            sizeLimit: 64Mi   # Cap at 64Mi to prevent runaway temp file accumulation
+
+      # ── Scheduling hints ───────────────────────────────────────────────────────
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      # nodeSelector: pin to nodes with specific labels (e.g. "spot=true", "gpu=true")
+      # affinity: more complex scheduling rules (prefer/require certain nodes)
+      # tolerations: allow scheduling on "tainted" nodes (e.g. dedicated GPU nodes)
+      # All empty by default → schedule anywhere

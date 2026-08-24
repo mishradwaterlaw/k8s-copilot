@@ -1,0 +1,51 @@
+{{/*
+pvc.yaml — PersistentVolumeClaim for the SQLite checkpoint database.
+
+CONCEPT: PVC LIFECYCLE
+═══════════════════════
+1. You create a PVC with a size and access mode request.
+2. Kubernetes finds a matching PersistentVolume (PV) and binds them.
+3. The PV is real storage: a disk on a node, an EBS volume, a GCS disk, etc.
+4. The Pod mounts the PVC at a path — reads/writes go to persistent storage.
+5. When the Pod is deleted, the PVC (and its data) SURVIVES.
+6. Next Pod starts, mounts the same PVC → picks up where it left off.
+
+For checkpoints.db, this means:
+  - Pod crash → K8s restarts it → SQLite file is still there → investigations resume
+  - Rolling update → old Pod removed, new Pod starts, mounts same PVC → no data loss
+
+WITHOUT a PVC: checkpoints.db lives in the container's ephemeral filesystem.
+Pod restart = database wiped = all paused investigations lost.
+*/}}
+
+{{- if .Values.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}-data
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+    # ReadWriteOnce: one node can mount this at a time (for read+write).
+    # This is correct for SQLite — only one Pod ever uses it (replicaCount: 1).
+    # ReadWriteMany would require a network filesystem (NFS, CephFS) and
+    # would NOT help SQLite — you'd still have file lock conflicts.
+
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size }}
+      # Dynamic provisioning: Kubernetes calls the storage driver (CSI plugin)
+      # to create an actual disk of this size. On GKE → GCE PD. On EKS → EBS.
+      # On bare metal → depends on what storage solution you've installed.
+
+  {{- if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- else if (eq .Values.persistence.storageClass "-") }}
+  storageClassName: ""   # Disables dynamic provisioning; requires a pre-created PV
+  {{- end }}
+  # If storageClass is "" (empty, the default), Kubernetes uses the cluster's
+  # default storage class — works on most managed K8s (GKE, EKS, AKS) without config.
+{{- end }}

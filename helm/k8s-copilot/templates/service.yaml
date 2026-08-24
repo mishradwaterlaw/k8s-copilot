@@ -1,0 +1,49 @@
+{{/*
+service.yaml — Exposes the copilot API inside the cluster.
+
+CONCEPT: KUBERNETES SERVICE
+═════════════════════════════
+A Pod's IP changes every time it's restarted or rescheduled to a new node.
+You can't reliably point anything at a Pod IP directly.
+
+A Service provides a STABLE IP and DNS name that routes to the Pod(s)
+matching its selector — regardless of which node they're on or how many
+times they've restarted.
+
+When this Service is created, Kubernetes also creates a DNS record:
+  <service-name>.<namespace>.svc.cluster.local
+  e.g. k8s-copilot.copilot-system.svc.cluster.local:8000
+
+Other Pods in the cluster reach the API via this DNS name.
+
+SERVICE TYPES:
+  ClusterIP    → internal-only, within the cluster. Most secure. Our default.
+  NodePort     → exposes on a static port on every Node's IP. For bare-metal/dev.
+  LoadBalancer → provisions a cloud LB. Best for production external access.
+  ExternalName → maps to an external DNS name. For migrating external services in.
+*/}}
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      # port: the port you connect to FROM inside the cluster (e.g. :8000)
+      targetPort: http
+      # targetPort: the port ON THE POD to forward traffic to.
+      # We use the named port "http" (defined in the Deployment container spec).
+      # Named ports are better than numbers — if the port changes, only one place
+      # needs updating (the Deployment), not both the Deployment and Service.
+      protocol: TCP
+      name: http
+  selector:
+    # selector: which Pods to route traffic to.
+    # Must match the Pod labels set in the Deployment template.
+    # selectorLabels produces: app.kubernetes.io/name + app.kubernetes.io/instance
+    {{- include "k8s-copilot.selectorLabels" . | nindent 4 }}

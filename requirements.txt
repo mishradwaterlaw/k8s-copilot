@@ -1,0 +1,36 @@
+# requirements.txt — Dependencies for the Docker build and venv
+# Used by: Dockerfile pip install, and manual venv setup
+#
+# Pinned versions for reproducibility:
+#   In production, you want the EXACT same package versions everywhere.
+#   "It works on my machine" is caused by version drift.
+#   Pin major.minor at minimum — minor updates often have breaking changes.
+#
+# To update: pip install --upgrade <package> then pin the new version here.
+
+# ── LangGraph / LangChain ─────────────────────────────────────────────────────
+langgraph>=0.2.0
+langgraph-checkpoint-sqlite>=1.0.0     # SqliteSaver — the persistence layer
+langchain-google-genai>=1.0.0          # Gemini LLM integration
+langchain-core>=0.2.0                  # Base types: BaseMessage, tool, etc.
+
+# ── FastAPI / Server ─────────────────────────────────────────────────────────
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0              # ASGI server — runs FastAPI
+pydantic>=2.0.0                        # Data validation (FastAPI uses this)
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+typer>=0.12.0                          # CLI framework — turns functions into commands
+rich>=13.0.0                           # Terminal formatting — colors, tables, spinners
+
+# ── Config ───────────────────────────────────────────────────────────────────
+python-dotenv>=1.0.0                   # Loads .env file into os.environ
+
+# ── Observability & Monitoring ───────────────────────────────────────────────
+prometheus-client>=0.20.0              # Prometheus metrics exposition (/metrics)
+langsmith>=0.1.0                       # LLM tracing and observability platform
+
+# ── Kubernetes (optional — only needed for DATA_PROVIDER=kube_api) ────────────
+# Uncomment if using real cluster:
+# kubernetes>=28.0.0
+

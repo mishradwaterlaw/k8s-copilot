@@ -1,0 +1,96 @@
+# ════════════════════════════════════════════════════════════════════════════
+# pyproject.toml — The modern Python package definition
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: pyproject.toml vs setup.py vs requirements.txt
+# ════════════════════════════════════════════════════════
+# requirements.txt: just a list of packages for pip to install.
+#   → No metadata, no entry points, no versioning.
+#   → Fine for simple scripts, not for installable tools.
+#
+# setup.py: old way to package Python projects (pre-2018).
+#   → Imperative Python code, hard to parse for tools.
+#   → Being phased out.
+#
+# pyproject.toml: the modern standard (PEP 517/518/621).
+#   → Declarative TOML — easy for tools (pip, poetry, build) to parse.
+#   → Defines metadata, dependencies, AND entry points.
+#   → Entry points let you create CLI commands (the [scripts] table below).
+#
+# After: pip install -e .
+#   You can run: k8s-copilot investigate ...
+#   Without specifying: python -m cli.app investigate ...
+#   The -e flag means "editable install" — changes to your source files
+#   are reflected immediately without reinstalling.
+# ════════════════════════════════════════════════════════════════════════════
+
+[build-system]
+# Specifies the tools needed to BUILD the package.
+# "hatchling" is the modern, fast build backend — an alternative to setuptools.
+# pip reads this section to know how to build the package.
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "k8s-copilot"
+version = "2.0.0"
+description = "Agentic Kubernetes investigation assistant with LangGraph multi-agent orchestration"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.11"  # We use 3.11+ syntax (str | None type union, etc.)
+authors = [
+    { name = "Your Name", email = "you@example.com" }
+]
+keywords = ["kubernetes", "ai", "agent", "langgraph", "devops", "observability"]
+
+# Core dependencies — what pip will install when someone installs this package.
+# Pinned to minimum versions, not exact versions, so users get security patches.
+dependencies = [
+    "langgraph>=0.2.0",
+    "langgraph-checkpoint-sqlite>=1.0.0",
+    "langchain-google-genai>=1.0.0",
+    "langchain-core>=0.2.0",
+    "fastapi>=0.111.0",
+    "uvicorn[standard]>=0.29.0",       # [standard] includes websockets + httptools (faster)
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "typer>=0.12.0",
+    "rich>=13.0.0",
+]
+
+[project.optional-dependencies]
+# Optional dependency groups — install with: pip install k8s-copilot[kube]
+# This is the standard pattern for optional features.
+kube = [
+    "kubernetes>=28.0.0",   # Real K8s API provider
+]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-mock>=3.12.0",
+    "httpx>=0.27.0",        # For testing FastAPI endpoints
+]
+
+[project.scripts]
+# This is the KEY part for CLI tools.
+# "k8s-copilot" → the command you type in the terminal
+# "cli.app:app"  → cli/app.py, the `app` object (the typer app)
+# After `pip install -e .`, typing `k8s-copilot` in your terminal runs the typer CLI.
+k8s-copilot = "cli.app:app"
+
+[tool.hatch.build.targets.wheel]
+# Tell hatch where the source code is (src/ directory layout).
+# packages = ["src/..."] would be alternative.
+# "." means: build from the current directory, treating it as the package root.
+packages = ["."]
+
+[tool.pytest.ini_options]
+# Pytest configuration
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+
+[tool.ruff]
+# ruff: a very fast Python linter (replaces flake8, isort, etc.)
+# Optional — only if you install ruff (pip install ruff)
+line-length = 100
+target-version = "py311"

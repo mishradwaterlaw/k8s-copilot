@@ -1,0 +1,43 @@
+{{/*
+configmap.yaml — Non-sensitive application configuration.
+
+CONCEPT: CONFIGMAP vs SECRET
+══════════════════════════════
+ConfigMap: stores plain-text configuration (not sensitive).
+  - Visible in plain text to anyone who can read ConfigMaps in the namespace
+  - Fine for: DATA_PROVIDER, LLM_MODEL, namespace names, thresholds
+
+Secret: stores sensitive data (base64-encoded, with access controls).
+  - Requires explicit RBAC to read
+  - For: API keys, passwords, TLS certificates
+
+RULE OF THUMB:
+  If you'd be comfortable with this value in a GitHub repo → ConfigMap.
+  If it's a secret or credential → Secret (created out-of-band, not by this chart).
+
+CONCEPT: ENVFROM vs ENV
+════════════════════════
+In the Deployment, we use envFrom to load ALL keys from this ConfigMap
+as environment variables at once. This is cleaner than listing each key
+individually with env: [{name: X, valueFrom: {configMapKeyRef: ...}}].
+*/}}
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+data:
+  # All values here become environment variables inside the container.
+  # Keys are case-sensitive — must match what config.py reads with os.getenv().
+  DATA_PROVIDER: {{ .Values.config.dataProvider | quote }}
+  LLM_MODEL: {{ .Values.config.llmModel | quote }}
+  KUBE_NAMESPACE: {{ .Values.config.kubeNamespace | quote }}
+  MAX_ITERATIONS: {{ .Values.config.maxIterations | quote }}
+  CONFIDENCE_THRESHOLD: {{ .Values.config.confidenceThreshold | quote }}
+  CHECKPOINT_DB_PATH: {{ .Values.config.checkpointDbPath | quote }}
+  # quote: wraps the value in YAML double-quotes.
+  # Important for values that look like numbers (e.g. "0.75") — without quotes
+  # YAML would parse them as floats, which can cause type errors when loaded.

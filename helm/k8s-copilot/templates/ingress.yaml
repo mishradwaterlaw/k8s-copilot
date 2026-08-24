@@ -1,0 +1,67 @@
+{{/*
+ingress.yaml — Optional external HTTP access (disabled by default).
+
+CONCEPT: INGRESS
+═════════════════
+An Ingress is a Layer 7 (HTTP/HTTPS) router that sits in front of your Services.
+It reads the hostname and path of incoming requests and routes to the right Service.
+
+Flow:
+  External traffic → Ingress Controller (nginx/traefik/alb) → Ingress rules → Service → Pod
+
+WHY NOT JUST USE type: LoadBalancer?
+  LoadBalancer gives ONE cloud LB per Service. With 10 services → 10 LBs → 10 bills.
+  An Ingress Controller is ONE LB that routes to many Services by hostname/path.
+
+PREREQUISITE: An Ingress Controller must already be installed in the cluster.
+  nginx:   helm install ingress-nginx ingress-nginx/ingress-nginx
+  traefik: helm install traefik traefik/traefik
+Without a controller, Ingress objects do nothing.
+*/}}
+
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+    # Common annotations:
+    # nginx.ingress.kubernetes.io/rewrite-target: /   → path rewriting
+    # cert-manager.io/cluster-issuer: letsencrypt-prod → auto TLS cert
+    # nginx.ingress.kubernetes.io/proxy-body-size: "0" → for large request bodies
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | quote }}
+  # ingressClassName: tells Kubernetes which Ingress Controller handles this Ingress.
+  # Must match the controller installed in your cluster.
+
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        - {{ .Values.ingress.hostname | quote }}
+      secretName: {{ .Values.ingress.tls.secretName | quote }}
+      # secretName: a K8s Secret containing the TLS cert and key.
+      # Usually managed by cert-manager (auto-issues/renews Let's Encrypt certs).
+  {{- end }}
+
+  rules:
+    - host: {{ .Values.ingress.hostname | quote }}
+      # host: only route requests with this Host header to our Service.
+      # DNS must point this hostname to your Ingress Controller's external IP.
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            # Prefix: matches /  and everything under it (/investigate, /health, etc.)
+            # Exact: matches only the exact path.
+            backend:
+              service:
+                name: {{ include "k8s-copilot.fullname" . }}
+                port:
+                  name: http
+{{- end }}

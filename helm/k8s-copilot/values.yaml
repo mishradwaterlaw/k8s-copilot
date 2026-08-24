@@ -1,0 +1,266 @@
+# ════════════════════════════════════════════════════════════════════════════
+# values.yaml — Default configuration values for the k8s-copilot chart
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: VALUES IN HELM
+# ════════════════════════
+# values.yaml is the "control panel" for the entire chart. Every
+# configurable aspect of the deployment is defined here with sensible defaults.
+#
+# Users override values at deploy time WITHOUT editing this file:
+#   helm install k8s-copilot ./helm/k8s-copilot \
+#     --set rbac.clusterWide=true \
+#     --set ingress.enabled=true \
+#     --set ingress.hostname=copilot.example.com
+#
+# Or via a custom values file (preferred for many overrides):
+#   helm install k8s-copilot ./helm/k8s-copilot -f my-prod-values.yaml
+#
+# WHAT MAKES A GOOD values.yaml:
+#   1. Sensible, safe defaults (nothing breaks out of the box)
+#   2. Every value has a comment explaining what it does
+#   3. Dangerous/opt-in features are disabled by default
+#   4. Grouped logically (not alphabetical)
+# ════════════════════════════════════════════════════════════════════════════
+
+
+# ── Replica count ────────────────────────────────────────────────────────────
+# !! IMPORTANT: DO NOT increase this beyond 1 without replacing the
+# !! SQLite checkpointer with a network-backed alternative (e.g. PostgreSQL).
+#
+# WHY: SQLite uses exclusive file locks. If two pods share the same
+# PersistentVolumeClaim and both try to write to checkpoints.db simultaneously,
+# they will either:
+#   (a) Block each other → severe performance degradation
+#   (b) Corrupt the database → lost investigations
+#
+# For high-availability, see the TODO at the bottom of this file.
+replicaCount: 1
+
+
+# ── Container image ──────────────────────────────────────────────────────────
+image:
+  # The Docker image to deploy. Built and pushed by the CI/CD pipeline.
+  # For local testing you can use: docker.io/library/k8s-copilot (if built locally)
+  repository: ghcr.io/mishradwaterlaw/k8s-copilot
+
+  # Image pull policy:
+  #   Always      → always pull from registry, even if tag exists locally (good for :latest)
+  #   IfNotPresent → use local cache if available (good for versioned tags like :v2.0.0)
+  #   Never       → never pull, use local only
+  pullPolicy: IfNotPresent
+
+  # The specific image tag to deploy.
+  # "" means: use the chart's appVersion (defined in Chart.yaml).
+  # In CI/CD, this is overridden with the git tag: --set image.tag=v2.1.0
+  tag: ""
+
+
+# ── Secret configuration ─────────────────────────────────────────────────────
+# CONCEPT: EXISTINGSECRET PATTERN
+# ════════════════════════════════
+# The chart does NOT create the API key Secret itself.
+# Reason: `helm install --set googleApiKey=$KEY` would write the key
+# into Helm's release history in base64 form (readable with `helm get values`).
+# That's a secrets leak waiting to happen.
+#
+# Instead, create the Secret OUT-OF-BAND before helm install:
+#
+#   kubectl create namespace copilot-system
+#   kubectl create secret generic k8s-copilot-secrets \
+#     --from-literal=GOOGLE_API_KEY=your_actual_key_here \
+#     -n copilot-system
+#
+# Then deploy the chart:
+#   helm install k8s-copilot ./helm/k8s-copilot -n copilot-system
+#
+# The chart references this Secret by name — the key never touches Helm.
+existingSecret: "k8s-copilot-secrets"
+# The key inside the Secret that holds the Gemini API key
+googleApiKeySecretKey: "GOOGLE_API_KEY"
+
+
+# ── Application configuration ─────────────────────────────────────────────────
+# These become a ConfigMap (non-sensitive config). See templates/configmap.yaml.
+config:
+  # "fixture" → use hardcoded test data (no real K8s access needed)
+  # "kube_api" → use the real Kubernetes API (requires RBAC permissions below)
+  dataProvider: "fixture"
+
+  # Gemini model to use
+  llmModel: "gemini-2.5-flash"
+
+  # Default namespace to investigate
+  # When dataProvider=kube_api, the agent reads from this namespace
+  kubeNamespace: "default"
+
+  # Max investigation loops before forcing human review
+  maxIterations: "3"
+
+  # Confidence threshold (0.0-1.0) to stop looping and go to human review
+  confidenceThreshold: "0.75"
+
+  # Path inside the container where checkpoints.db is stored.
+  # Must match the PVC mountPath in deployment.yaml.
+  checkpointDbPath: "/app/data/checkpoints.db"
+
+
+# ── RBAC configuration ────────────────────────────────────────────────────────
+# CONCEPT: RBAC SCOPE DECISION
+# ══════════════════════════════
+# clusterWide: false (DEFAULT) → Role + RoleBinding (namespace-scoped)
+#   The agent can only read pods/events/deployments in the namespace
+#   where the copilot itself is deployed.
+#   This is LEAST PRIVILEGE — the correct, secure baseline.
+#
+# clusterWide: true (OPT-IN) → ClusterRole + ClusterRoleBinding
+#   The agent can read pods/events/deployments across ALL namespaces.
+#   Useful when investigating alerts in namespaces other than copilot-system.
+#   Must be an explicit, conscious choice by the person deploying.
+#
+# INTERVIEW TALKING POINT:
+#   "Least privilege is the default. If you want wider access, you set
+#   rbac.clusterWide=true and explicitly accept the broader permissions.
+#   The reviewer has to sign off on it — not something that happens silently."
+rbac:
+  create: true          # set to false to manage RBAC entirely outside Helm
+  clusterWide: false    # DEFAULT: namespace-scoped. Set true for cluster-wide investigation.
+
+
+# ── Service account ───────────────────────────────────────────────────────────
+serviceAccount:
+  create: true
+  # Name of the ServiceAccount to create (or use if create: false)
+  # "" means: auto-generate from chart/release name
+  name: ""
+  # Annotations added to the ServiceAccount.
+  # Common use: IAM role binding for cloud providers (AWS IRSA, GCP Workload Identity)
+  annotations: {}
+
+
+# ── Kubernetes Service ────────────────────────────────────────────────────────
+service:
+  # ClusterIP → internal access only (within the cluster). Most secure.
+  # NodePort  → accessible on every node's IP at a static port. For bare-metal/dev.
+  # LoadBalancer → creates a cloud load balancer. For production + public access.
+  type: ClusterIP
+  port: 8000
+
+
+# ── Ingress ───────────────────────────────────────────────────────────────────
+# CONCEPT: INGRESS
+# ═════════════════
+# An Ingress routes external HTTP(S) traffic into the cluster.
+# Requires an "Ingress Controller" already deployed (e.g. nginx-ingress, traefik).
+# Without a controller, Ingress objects do nothing.
+#
+# disabled by default — not every cluster has an ingress controller
+ingress:
+  enabled: false
+  # The ingress controller to use. Must match what's installed in your cluster.
+  className: "nginx"
+  # Hostname for the copilot (must have DNS pointing to your ingress controller)
+  hostname: "copilot.example.com"
+  # TLS: set enabled=true and provide a cert (or use cert-manager)
+  tls:
+    enabled: false
+    secretName: "k8s-copilot-tls"
+  # Extra annotations (e.g. for cert-manager, AWS ALB, etc.)
+  annotations: {}
+
+
+# ── Persistent storage ────────────────────────────────────────────────────────
+# CONCEPT: PERSISTENTVOLUMECLAIM (PVC)
+# ══════════════════════════════════════
+# A PVC requests a piece of persistent storage from the cluster.
+# Unlike Pod-local storage (lost on restart), PVC-backed storage survives
+# Pod restarts, rescheduling, and (depending on storage class) node failures.
+#
+# We use it to persist checkpoints.db so investigations survive Pod restarts.
+persistence:
+  enabled: true
+  # Size of the volume. SQLite checkpoints are small — 100Mi is generous.
+  # 1Gi is even safer for long-running production deployments.
+  size: 1Gi
+  # storageClass: which type of storage to use.
+  # ""  → use the cluster's default storage class (works on most managed K8s)
+  # "-" → disable dynamic provisioning (you must pre-provision a PV manually)
+  # "standard", "gp2", "premium-rwo" → specific classes for your cloud
+  storageClass: ""
+  # Access mode:
+  # ReadWriteOnce (RWO) → can be mounted by ONE node at a time. Correct for SQLite.
+  # ReadWriteMany (RWX) → multiple nodes simultaneously. NOT safe for SQLite.
+  accessMode: ReadWriteOnce
+
+
+# ── Resource requests and limits ──────────────────────────────────────────────
+# CONCEPT: RESOURCE MANAGEMENT IN KUBERNETES
+# ═══════════════════════════════════════════
+# requests: the MINIMUM resources the pod needs.
+#   Kubernetes uses these to SCHEDULE the pod on a node with enough capacity.
+#   If a node doesn't have 256Mi free, the pod won't be scheduled there.
+#
+# limits: the MAXIMUM the pod can use.
+#   If the pod exceeds the memory limit → OOMKilled (Out Of Memory killed).
+#   If the pod exceeds the CPU limit → throttled (slowed down, not killed).
+#
+# For an LLM-calling app: most time is spent waiting for API responses (I/O bound).
+# CPU is low. Memory is moderate (Python + libraries + in-flight state).
+resources:
+  requests:
+    memory: "256Mi"   # Mi = Mebibytes (1Mi = 1024*1024 bytes)
+    cpu: "100m"       # m = millicores. 100m = 0.1 CPU core.
+  limits:
+    memory: "512Mi"
+    cpu: "500m"       # 0.5 CPU core max
+
+
+# ── Liveness and readiness probes ────────────────────────────────────────────
+# CONCEPT: PROBES
+# ════════════════
+# Kubernetes uses probes to know if a container is healthy.
+#
+# livenessProbe: "Is the app alive?" If this fails repeatedly → restart the container.
+#   Use for deadlocks or stuck states.
+#
+# readinessProbe: "Is the app ready to serve traffic?" If this fails → remove from
+#   Service load balancing (traffic stops going to it). Used during startup or overload.
+#
+# We point both at GET /health — our FastAPI endpoint that returns {"status": "ok"}.
+probes:
+  liveness:
+    path: /health
+    initialDelaySeconds: 15   # Wait 15s before first probe (app startup time)
+    periodSeconds: 30         # Check every 30s
+    failureThreshold: 3       # Restart after 3 consecutive failures
+  readiness:
+    path: /health
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    failureThreshold: 3
+
+
+# ── Node selection ────────────────────────────────────────────────────────────
+# These are empty by default — run on any available node.
+# Override to pin to specific nodes (e.g. spot instances, GPU nodes, etc.)
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# TODO: HIGH AVAILABILITY
+# ════════════════════════
+# To run multiple replicas (replicaCount > 1):
+#
+# 1. Replace SqliteSaver with a network-backed checkpointer:
+#    - langgraph-checkpoint-postgres (PostgreSQL)
+#    - Deploy PostgreSQL as a subchart or external managed DB
+#
+# 2. Set replicaCount to desired number
+#
+# 3. Consider adding a HorizontalPodAutoscaler (HPA) for auto-scaling
+#
+# SQLite is intentionally kept for the demo/learning version because it
+# requires zero infrastructure. For production, swap the backend.
+# ════════════════════════════════════════════════════════════════════════════

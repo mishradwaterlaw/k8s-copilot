@@ -1,0 +1,29 @@
+{{/*
+clusterrolebinding.yaml — Binds the ClusterRole to the ServiceAccount (OPT-IN).
+Only rendered when rbac.clusterWide=true.
+
+Key difference from RoleBinding:
+  - ClusterRoleBinding has no namespace field at the top level (it's cluster-scoped)
+  - The subject (ServiceAccount) still specifies its namespace — where it lives
+  - The roleRef points to a ClusterRole (not a Role)
+*/}}
+
+{{- if and .Values.rbac.create .Values.rbac.clusterWide }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  # No namespace: ClusterRoleBinding is cluster-scoped
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole                               # note: ClusterRole, not Role
+  name: {{ include "k8s-copilot.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "k8s-copilot.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+    # Even in a ClusterRoleBinding, the ServiceAccount's namespace is required —
+    # it tells Kubernetes WHERE to find the ServiceAccount object.
+{{- end }}

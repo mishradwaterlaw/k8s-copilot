@@ -1,0 +1,66 @@
+# ════════════════════════════════════════════════════════════════════════════
+# .dockerignore — Files to EXCLUDE from the Docker build context
+# ════════════════════════════════════════════════════════════════════════════
+#
+# CONCEPT: BUILD CONTEXT
+# ══════════════════════
+# When you run `docker build .`, Docker sends all files in the current
+# directory to the Docker daemon (the "build context"). Even if your
+# Dockerfile doesn't COPY these files, they're still sent over the wire.
+#
+# .dockerignore works like .gitignore: it tells Docker to exclude matching
+# files from the build context entirely. This:
+#   1. Speeds up builds (less data transferred)
+#   2. Prevents sensitive files from accidentally ending up in the image
+#   3. Prevents cache invalidation from irrelevant files changing
+# ════════════════════════════════════════════════════════════════════════════
+
+# Python bytecode — not needed, regenerated at runtime
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Virtual environment — we install deps fresh in the Docker image
+venv/
+env/
+.venv/
+
+# Development database — the container manages its own
+checkpoints.db
+*.db
+
+# Secrets and environment files — NEVER include in image
+.env
+.env.*
+!.env.example   # exception: include the example file (it has no real secrets)
+
+# Git metadata — not needed in the image
+.git/
+.gitignore
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test artifacts
+.pytest_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# Documentation (if any)
+docs/
+*.md
+!README.md
+
+# macOS
+.DS_Store
+
+# Build artifacts if any
+dist/
+build/
+*.egg-info/

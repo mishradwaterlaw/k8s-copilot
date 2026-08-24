@@ -1,0 +1,50 @@
+CHART: {{ .Chart.Name }} v{{ .Chart.Version }} (app: v{{ .Chart.AppVersion }})
+RELEASE: {{ .Release.Name }} → NAMESPACE: {{ .Release.Namespace }}
+
+═══════════════════════════════════════════════════════
+  K8s Copilot deployed successfully!
+═══════════════════════════════════════════════════════
+
+STEP 1 — Create the API key Secret (if you haven't already):
+
+  kubectl create secret generic {{ .Values.existingSecret }} \
+    --from-literal=GOOGLE_API_KEY=<your-gemini-api-key> \
+    -n {{ .Release.Namespace }}
+
+  !! The Secret must exist before the Pod can start. !!
+  !! Without it the Pod will be in CrashLoopBackOff.  !!
+
+STEP 2 — Check that the Pod is running:
+
+  kubectl get pods -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "k8s-copilot.name" . }}
+
+STEP 3 — Access the API:
+
+{{- if .Values.ingress.enabled }}
+  External URL: http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.hostname }}
+  API docs:     http{{ if .Values.ingress.tls.enabled }}s{{ end }}://{{ .Values.ingress.hostname }}/docs
+{{- else if eq .Values.service.type "LoadBalancer" }}
+  Run this to get the external IP (may take a minute to provision):
+  kubectl get svc -n {{ .Release.Namespace }} {{ include "k8s-copilot.fullname" . }} -w
+{{- else }}
+  Port-forward for local access:
+  kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "k8s-copilot.fullname" . }} 8000:8000
+  Then open: http://localhost:8000/docs
+{{- end }}
+
+STEP 4 — Run an investigation via CLI (inside the pod):
+
+  kubectl exec -n {{ .Release.Namespace }} \
+    $(kubectl get pod -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "k8s-copilot.name" . }} -o name | head -1) \
+    -- python -m cli.app investigate \
+       --alert "Pod my-pod is in CrashLoopBackOff" \
+       --namespace default \
+       --pod-name my-pod
+
+RBAC MODE: {{ if .Values.rbac.clusterWide }}CLUSTER-WIDE (ClusterRole){{ else }}NAMESPACE-SCOPED (Role) — investigates pods in: {{ .Values.config.kubeNamespace }}{{ end }}
+DATA PROVIDER: {{ .Values.config.dataProvider }}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+For HA (multiple replicas): migrate SQLite → PostgreSQL.
+See values.yaml TODO section for the upgrade path.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -1,0 +1,45 @@
+{{/*
+rolebinding.yaml — Binds the namespace-scoped Role to the ServiceAccount.
+Rendered when rbac.clusterWide=false (the DEFAULT).
+
+CONCEPT: ROLEBINDING
+═════════════════════
+A RoleBinding is the LINK between:
+  - A Role (what permissions exist)
+  - A Subject (who gets those permissions)
+
+Without a RoleBinding, a Role is just a definition sitting unused.
+Without a Role, the RoleBinding has nothing to grant.
+Both must exist for permissions to take effect.
+
+subject kinds:
+  ServiceAccount → a Pod's identity (what we use here)
+  User           → a human user (authenticated via OIDC, certs, etc.)
+  Group          → a collection of users
+
+The subject's namespace must match where the ServiceAccount lives — in this
+case, {{ .Release.Namespace }} (the namespace you deploy the chart into).
+*/}}
+
+{{- if and .Values.rbac.create (not .Values.rbac.clusterWide) }}
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "k8s-copilot.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "k8s-copilot.labels" . | nindent 4 }}
+roleRef:
+  # roleRef: the Role (or ClusterRole) being granted.
+  # apiGroup must be exactly this string for RBAC resources.
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role                                      # namespace-scoped
+  name: {{ include "k8s-copilot.fullname" . }}   # must match the Role name above
+subjects:
+  # Who receives the permissions: our copilot's ServiceAccount.
+  - kind: ServiceAccount
+    name: {{ include "k8s-copilot.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+    # The namespace here tells K8s WHERE the ServiceAccount lives.
+    # For RoleBinding, the SA and the binding must be in the same namespace.
+{{- end }}
