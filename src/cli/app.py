@@ -137,31 +137,16 @@ def investigate(
     thread_id = str(uuid.uuid4())
     run_config = {"configurable": {"thread_id": thread_id}}
 
-    console.print(f"\n[dim]Investigation ID:[/dim] [dim cyan]{thread_id}[/dim cyan]\n")
-
-    # Stream the graph — we get updates node by node.
-    # stream_mode="updates" gives us: {node_name: partial_state_update}
-    with Live(console=console, refresh_per_second=4) as live:
-        # Live context: Rich updates the terminal in place (like a progress bar)
-        # refresh_per_second: how often the display updates
-
-        for event in graph.stream(initial_state, config=run_config, stream_mode="updates"):
-            for node_name, update in event.items():
+    def _stream_execution(payload):
+        """Helper to stream graph execution and print node completion indicators."""
+        for event in graph.stream(payload, config=run_config, stream_mode="updates"):
+            for node_name, _ in event.items():
                 display_name = NODE_DISPLAY.get(node_name, node_name)
-
-                if node_name == "__interrupt__":
-                    # Graph paused — stop the live display and go to review
-                    live.stop()
-                    break
-                else:
-                    # Show which node just finished
-                    live.update(
-                        Text(f"  {display_name} [green]✓[/green]", style="bold")
-                    )
+                if node_name != "__interrupt__":
                     console.print(f"  {display_name} [green]✓[/green]")
-            else:
-                continue
-            break  # Break outer loop when we hit __interrupt__
+
+    # Run initial investigation
+    _stream_execution(initial_state)
 
     # ── Interactive Review & Steering Loop ─────────────────────────────────────
     while True:
@@ -187,10 +172,10 @@ def investigate(
         )
 
         console.print()
-        console.print("  [dim]Resuming investigation with decision...[/dim]")
+        console.print(f"  [dim]Executing decision: {decision}...[/dim]")
 
-        # Resume the graph with human decision or feedback
-        graph.invoke(Command(resume=decision), config=run_config)
+        # Stream re-investigation or completion nodes
+        _stream_execution(Command(resume=decision))
 
 
 # ── Display Helpers ───────────────────────────────────────────────────────────
