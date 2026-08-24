@@ -6,6 +6,9 @@
 [![Docker Image](https://img.shields.io/badge/ghcr.io-mishradwaterlaw%2Fk8s--copilot-blue)](https://github.com/mishradwaterlaw/k8s-copilot/pkgs/container/k8s-copilot)
 
 > **Agentic Kubernetes Investigation Assistant** — autonomous multi-agent root cause analysis using LangGraph, FastAPI, Prometheus observability, and a Rich CLI.
+>
+> 
+> ### 🎥 Watch Live Demo
 
 https://github.com/user-attachments/assets/0f24f7e0-ab64-4fde-8da3-2f28389fc6f4
 
