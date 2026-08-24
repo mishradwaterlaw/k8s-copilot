@@ -115,7 +115,13 @@ Summarize in ONE sentence: Is a recent deployment likely to have caused
 this alert? If yes, what specifically changed that could explain it?
 If no recent deploy is suspicious, say so clearly."""
 
-        finding = llm.invoke(prompt).content.strip()
+        raw_content = llm.invoke(prompt).content
+        if isinstance(raw_content, list):
+            finding = " ".join(
+                p.get("text", str(p)) if isinstance(p, dict) else str(p) for p in raw_content
+            ).strip()
+        else:
+            finding = str(raw_content).strip()
         return {"finding": finding}
 
     builder = StateGraph(DeployState)
@@ -182,7 +188,15 @@ def build_log_subgraph(
         pull the text out of the last message and store it as `finding`.
         This is what the supervisor will read.
         """
-        return {"finding": state["messages"][-1].content}
+        raw_content = state["messages"][-1].content
+        if isinstance(raw_content, list):
+            # Gemini may return list of content parts/dicts
+            finding = " ".join(
+                p.get("text", str(p)) if isinstance(p, dict) else str(p) for p in raw_content
+            ).strip()
+        else:
+            finding = str(raw_content).strip()
+        return {"finding": finding}
         # [-1] = last element of the list. After the agent loop finishes,
         # the last message is always the agent's final text response.
 

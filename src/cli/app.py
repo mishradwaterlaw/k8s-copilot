@@ -197,6 +197,17 @@ def investigate(
 
 # ── Display Helpers ───────────────────────────────────────────────────────────
 
+def _to_str(val: Any) -> str:
+    """Safely convert any value (list, dict, None, str) to a clean printable string."""
+    if val is None:
+        return ""
+    if isinstance(val, list):
+        return " ".join(
+            p.get("text", str(p)) if isinstance(p, dict) else str(p) for p in val
+        ).strip()
+    return str(val).strip()
+
+
 def _print_review_panel(pending: dict):
     """Print the human review panel with findings and proposed root cause."""
     # Rich Table for the findings
@@ -209,14 +220,18 @@ def _print_review_panel(pending: dict):
     table.add_column("Agent", style="cyan", no_wrap=True)
     table.add_column("Finding")
 
-    table.add_row("⚙️  Deploy Investigator", pending.get("deploy_finding", ""))
-    table.add_row("📋 Log Investigator", pending.get("log_finding", ""))
+    deploy_text = _to_str(pending.get("deploy_finding", ""))
+    log_text = _to_str(pending.get("log_finding", ""))
+    proposed_cause = _to_str(pending.get("proposed_root_cause", ""))
+
+    table.add_row("[DEPLOY] Deploy Investigator", deploy_text)
+    table.add_row("[LOGS]   Log Investigator", log_text)
 
     console.print(table)
     console.print()
 
     # Confidence bar — visual representation of 0.0 to 1.0
-    confidence = pending.get("confidence", 0.0)
+    confidence = float(pending.get("confidence", 0.0) or 0.0)
     bar_width = 30
     filled = int(confidence * bar_width)
     bar = "█" * filled + "░" * (bar_width - filled)
@@ -225,7 +240,7 @@ def _print_review_panel(pending: dict):
     console.print(
         Panel(
             f"[bold white]Proposed Root Cause:[/bold white]\n"
-            f"[italic]{pending.get('proposed_root_cause', '')}[/italic]\n\n"
+            f"[italic]{proposed_cause}[/italic]\n\n"
             f"[dim]Confidence:[/dim] [{conf_color}]{bar}[/{conf_color}] [bold]{confidence:.0%}[/bold]  "
             f"[dim]({pending.get('iterations_run', 0)} iteration(s))[/dim]",
             title="[bold yellow]>> Awaiting Human Review[/bold yellow]",
@@ -237,13 +252,14 @@ def _print_review_panel(pending: dict):
 
 def _print_final(state: dict, thread_id: str):
     """Print the final investigation result."""
-    confidence = state.get("confidence", 0.0)
+    confidence = float(state.get("confidence", 0.0) or 0.0)
     conf_color = "green" if confidence >= 0.75 else "yellow" if confidence >= 0.5 else "red"
+    root_cause = _to_str(state.get("root_cause", "Unknown"))
 
     console.print(
         Panel(
             f"[bold white]Root Cause:[/bold white]\n"
-            f"[italic green]{state.get('root_cause', 'Unknown')}[/italic green]\n\n"
+            f"[italic green]{root_cause}[/italic green]\n\n"
             f"[dim]Confidence:[/dim] [{conf_color}]{confidence:.0%}[/{conf_color}]   "
             f"[dim]Iterations:[/dim] {state.get('iteration_count', 0)}   "
             f"[dim]Thread:[/dim] [dim cyan]{thread_id[:8]}...[/dim cyan]",
