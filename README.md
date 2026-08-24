@@ -7,11 +7,14 @@
 
 > **Agentic Kubernetes Investigation Assistant** — autonomous multi-agent root cause analysis using LangGraph, FastAPI, Prometheus observability, and a Rich CLI.
 
----
+https://github.com/user-attachments/assets/0f24f7e0-ab64-4fde-8da3-2f28389fc6f4
 
 ##  What Problem Does This Solve?
 
-When a Kubernetes alert triggers at 3:00 AM (e.g. `CrashLoopBackOff` or `OOMKilled`), on-call SREs and platform engineers spend 15–45 minutes manually correlating:
+
+When a Kubernetes alert triggers at 3:00 AM (e.g. `CrashLoopBackOff` or `OOMKilled`), on-call SREs and platform engineers spend 15–45 minutes manually
+
+ correlating:
 - Pod lifecycle events (`kubectl get events`)
 - Container stdout/stderr error logs (`kubectl logs --previous`)
 - Recent deployment revisions & config diffs (`kubectl get deployments`)
