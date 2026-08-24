@@ -25,19 +25,10 @@ IMPORTANT PATTERN — STATE AS THE COMMUNICATION CHANNEL:
   it resumes, everything needed is right there in the state.
 """
 
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.types import interrupt
-
 from state import InvestigationState
+from llm import get_llm
 import config
-
-
-def _get_llm():
-    """Lazy LLM instantiation — same pattern as subgraphs.py."""
-    return ChatGoogleGenerativeAI(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-    )
 
 
 def call_deploy_investigator(state: InvestigationState) -> dict:
@@ -123,7 +114,7 @@ def synthesize(state: InvestigationState) -> dict:
     SUPERVISOR NODE: Read both investigators' findings and produce
     a confidence score + root cause hypothesis.
     """
-    llm = _get_llm()
+    llm = get_llm()
 
     feedback_context = ""
     if state.get("human_feedback"):

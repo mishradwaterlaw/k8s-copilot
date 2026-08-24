@@ -12,6 +12,7 @@
 langgraph>=0.2.0
 langgraph-checkpoint-sqlite>=1.0.0     # SqliteSaver — the persistence layer
 langchain-google-genai>=1.0.0          # Gemini LLM integration
+langchain-groq>=0.1.0                  # Groq LLM integration (Llama-3.3-70B)
 langchain-core>=0.2.0                  # Base types: BaseMessage, tool, etc.
 
 # ── FastAPI / Server ─────────────────────────────────────────────────────────

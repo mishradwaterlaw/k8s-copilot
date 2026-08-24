@@ -35,27 +35,7 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from providers.base import KubeDataProvider
 from tools import make_tools, make_deploy_tools
-
-
-def _get_llm():
-    """
-    Lazy LLM loader — imports and creates the LLM only when called.
-
-    WHY LAZY?
-      We don't want to instantiate ChatGoogleGenerativeAI at module import time.
-      If the module is imported in a test or CLI context where no API key is
-      configured yet (e.g., before .env is loaded), a module-level LLM would
-      crash on import instead of crashing at the point where it's actually used.
-      Lazy loading makes the error happen at the right time.
-    """
-    import os
-    from langchain_google_genai import ChatGoogleGenerativeAI
-    import config
-    return ChatGoogleGenerativeAI(
-        model=config.LLM_MODEL,
-        temperature=config.LLM_TEMPERATURE,
-        google_api_key=os.getenv("GOOGLE_API_KEY"),
-    )
+from llm import get_llm
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -92,7 +72,7 @@ def build_deploy_subgraph(
     singleton) because it needs the runtime provider/namespace/pod_name.
     This is a small overhead — graph compilation is fast.
     """
-    llm = _get_llm()
+    llm = get_llm()
     deploy_tools = make_deploy_tools(provider, namespace)
 
     def summarize_deploy(state: DeployState) -> dict:
@@ -159,7 +139,7 @@ def build_log_subgraph(
     namespace: str,
     pod_name: str,
 ):
-    llm = _get_llm()
+    llm = get_llm()
     investigation_tools = make_tools(provider, namespace, pod_name)
 
     # bind_tools() attaches tool schemas to the LLM.

@@ -33,15 +33,15 @@ load_dotenv()
 # LLM SETTINGS
 # ─────────────────────────────────────────────────────────────
 
-# os.getenv(key, default) reads an environment variable.
-# If not set, it falls back to the default value.
-# This is how you configure behavior without changing code.
+# LLM Provider: "gemini" (default) or "groq"
+LLM_PROVIDER: str = os.getenv("LLM_PROVIDER", "gemini")
+
+# Model identifier:
+#   For Gemini: "gemini-2.5-flash", "gemini-1.5-flash"
+#   For Groq: "llama-3.3-70b-versatile", "llama-3.1-8b-instant"
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gemini-2.5-flash")
 
-# Temperature controls LLM randomness.
-#   0.0 = fully deterministic (same input → same output, every time)
-#   1.0 = very creative/varied
-# For an analysis tool that needs consistent reasoning, 0 is correct.
+# Temperature controls LLM randomness (0.0 = deterministic)
 LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0"))
 
 
