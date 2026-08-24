@@ -60,7 +60,8 @@ def call_deploy_investigator(state: InvestigationState) -> dict:
     # Local imports here (not top-level) to avoid circular imports.
     # nodes.py ← imports ← subgraphs.py (which imports tools.py, providers/).
     # If we imported at the top level, Python's import system could get
-    # into a circular dependency issue. Local imports br    provider = get_provider()
+    # into a circular dependency issue. Local imports break the cycle.
+    provider = get_provider()
     subgraph = build_deploy_subgraph(
         provider=provider,
         namespace=state["namespace"],
