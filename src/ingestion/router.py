@@ -53,6 +53,7 @@ def _run_background_investigation(event: AlertEvent, thread_id: str) -> None:
         "pod_name": event.pod_name,
         "deploy_finding": "",
         "log_finding": "",
+        "findings": [],
         "iteration_count": 0,
         "confidence": 0.0,
         "root_cause": "",

@@ -12,7 +12,8 @@ HUMAN-STEERING EXTENSIONS:
   - `feedback_action`: "approve" | "reinvestigate" | "override"
 """
 
-from typing import TypedDict
+import operator
+from typing import TypedDict, Annotated
 
 
 class InvestigationState(TypedDict):
@@ -26,8 +27,9 @@ class InvestigationState(TypedDict):
     pod_name: str          # Target pod name: "payments-api-7f8b9"
 
     # ── Subagent findings ───────────────────────────────────────────────────
-    deploy_finding: str    # Distilled summary from Deploy Investigator
-    log_finding: str       # Distilled summary from Log Investigator
+    deploy_finding: str    # Distilled summary from Deploy Investigator (kept for backward compatibility)
+    log_finding: str       # Distilled summary from Log Investigator (kept for backward compatibility)
+    findings: Annotated[list[str], operator.add]  # State reducer: merges parallel findings via operator.add
 
     # ── Loop & Confidence control ───────────────────────────────────────────
     iteration_count: int   # Number of synthesis rounds executed

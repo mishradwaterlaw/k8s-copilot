@@ -1,16 +1,3 @@
-"""
-llm.py — Pluggable LLM Provider Factory for k8s-copilot.
-
-CONCEPT: 12-FACTOR PLUGGABLE LLM PROVIDER PATTERN
-═════════════════════════════════════════════════
-Rather than hardcoding a single AI vendor (e.g. Google Gemini), this module
-provides a provider-agnostic factory:
-  - `LLM_PROVIDER=gemini`: Uses Google Gemini (`gemini-2.5-flash` or `gemini-1.5-flash`)
-  - `LLM_PROVIDER=groq`: Uses Groq Ultra-Fast Inference (`llama-3.3-70b-versatile` or `llama-3.1-8b-instant`)
-
-This allows zero-code switching via environment variables when rate limits or
-cloud policies change.
-"""
 
 import os
 from langchain_core.language_models.chat_models import BaseChatModel

@@ -58,6 +58,7 @@ def sample_state():
         "pod_name": "payments-api-7f8b9",
         "deploy_finding": "",
         "log_finding": "",
+        "findings": [],
         "iteration_count": 0,
         "confidence": 0.0,
         "root_cause": "",

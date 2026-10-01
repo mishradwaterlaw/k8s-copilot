@@ -1,35 +1,3 @@
-"""
-main.py — FastAPI server that exposes the investigation graph as a REST API.
-
-WHAT CHANGED:
-  - /investigate now accepts namespace and pod_name alongside alert
-  - initial_state includes the new fields
-  - Everything else is structurally the same
-
-CONCEPT: WHY TWO ENDPOINTS INSTEAD OF ONE?
-  A naive approach: POST /investigate → runs graph → BLOCKS until human approves.
-  Problem: the HTTP request would hang for however long it takes a human
-  to review. Could be minutes, hours, or never. HTTP clients time out.
-
-  The correct approach:
-    POST /investigate      → starts investigation, returns immediately when paused
-    POST /investigate/{id}/resume → human sends their decision, graph finishes
-
-  The thread_id ties the two requests together.
-  The SqliteSaver checkpoint persists state between them.
-  The server process could restart between the two calls — it doesn't matter.
-  This is how you build human-in-the-loop into a real async system.
-
-CONCEPT: WHY THREAD_ID?
-  LangGraph's checkpointer is keyed by "thread_id" — a string you choose.
-  Think of it as a conversation ID. One investigation = one thread.
-  
-  We generate a random UUID for each new investigation so IDs don't collide.
-  In production you might use a more meaningful ID:
-    - Alert ID from your monitoring system
-    - Pod name + timestamp
-  As long as it's unique, any string works.
-"""
 
 import uuid
 import time
@@ -78,6 +46,10 @@ class ResumeRequest(BaseModel):
 
 # ── Endpoints ────────────────────────────────────────────────────────────────
 
+@app.get("/")
+def greetTheFucker(name:str):
+    return {"message": f"Hi Fucker, your name is : {name}"}
+
 @app.post("/investigate")
 def investigate(req: InvestigateRequest):
     """
@@ -93,6 +65,7 @@ def investigate(req: InvestigateRequest):
         "pod_name": req.pod_name,
         "deploy_finding": "",
         "log_finding": "",
+        "findings": [],
         "iteration_count": 0,
         "confidence": 0.0,
         "root_cause": "",
@@ -128,6 +101,7 @@ def investigate(req: InvestigateRequest):
             "confidence": pending["confidence"],
             "deploy_finding": pending["deploy_finding"],
             "log_finding": pending["log_finding"],
+            "findings": pending.get("findings", []),
             "pod_name": pending["pod_name"],
             "namespace": pending["namespace"],
             "iterations_run": pending["iterations_run"],

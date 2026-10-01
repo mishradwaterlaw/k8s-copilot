@@ -1,24 +1,4 @@
-# ════════════════════════════════════════════════════════════════════════════
-# .github/workflows/ci.yml — Continuous Integration Pipeline
-# ════════════════════════════════════════════════════════════════════════════
-#
-# CONCEPT: GITHUB ACTIONS CI
-# ══════════════════════════
-# Continuous Integration (CI) is an automated pipeline that runs every time
-# code is pushed or a Pull Request is opened. Its job is to catch bugs,
-# lint violations, and build failures BEFORE bad code gets merged into `main`.
-#
-# PIPELINE STAGES:
-#   1. Lint & Format check (Fast feedback)
-#   2. Unit & Integration Tests (with pip caching for speed)
-#   3. Docker Build Test (verifies Dockerfile compiles properly)
-#   4. Helm Chart Linting (verifies Helm templates are valid syntax)
-#
-# INTERVIEW TALKING POINT:
-#   "I created a comprehensive CI workflow with dependency caching via actions/cache.
-#   It runs unit tests with mocked LLM calls, lints the codebase, validates the Helm chart,
-#   and checks the multi-stage Docker build on every pull request to ensure zero broken builds."
-# ════════════════════════════════════════════════════════════════════════════
+
 
 name: CI Pipeline
 

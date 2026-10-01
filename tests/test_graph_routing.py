@@ -85,3 +85,53 @@ class TestHumanReviewNode:
         assert update["feedback_action"] == "reinvestigate"
         assert update["human_feedback"] == feedback_text
         assert update["iteration_count"] == 0
+
+
+class TestStateReducers:
+
+    def test_investigation_state_findings_reducer_merges_parallel_outputs(self):
+        """
+        Verify that LangGraph uses operator.add to merge concurrent updates
+        to 'findings' from the parallel investigator nodes without an InvalidUpdateError.
+        """
+        import operator
+        from state import InvestigationState
+        from langgraph.graph import StateGraph, START, END
+
+        # Build a minimal 2-node parallel fan-out test graph
+        builder = StateGraph(InvestigationState)
+
+        def mock_deploy_investigator(state: InvestigationState) -> dict:
+            return {"findings": ["[DEPLOY] Deploy v2.4 rolled out 5m ago."]}
+
+        def mock_log_investigator(state: InvestigationState) -> dict:
+            return {"findings": ["[LOGS] CrashLoop: Connection refused on port 5432."]}
+
+        builder.add_node("deploy", mock_deploy_investigator)
+        builder.add_node("log", mock_log_investigator)
+
+        builder.add_edge(START, "deploy")
+        builder.add_edge(START, "log")
+        builder.add_edge("deploy", END)
+        builder.add_edge("log", END)
+
+        compiled_graph = builder.compile()
+
+        initial_state = {
+            "alert": "Pod test in namespace default is CrashLoopBackOff",
+            "namespace": "default",
+            "pod_name": "test-pod",
+            "deploy_finding": "",
+            "log_finding": "",
+            "findings": [],
+            "iteration_count": 0,
+            "confidence": 0.0,
+            "root_cause": "",
+        }
+
+        final_state = compiled_graph.invoke(initial_state)
+
+        # Both parallel updates must be merged into state["findings"]
+        assert len(final_state["findings"]) == 2
+        assert "[DEPLOY] Deploy v2.4 rolled out 5m ago." in final_state["findings"]
+        assert "[LOGS] CrashLoop: Connection refused on port 5432." in final_state["findings"]

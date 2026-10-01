@@ -64,7 +64,11 @@ def call_deploy_investigator(state: InvestigationState) -> dict:
         alert_text += f"\n[Human Reviewer Feedback/Guidance: '{state['human_feedback']}']"
 
     result = subgraph.invoke({"alert": alert_text})
-    return {"deploy_finding": result["finding"]}
+    finding = result["finding"]
+    return {
+        "deploy_finding": finding,
+        "findings": [f"[Deploy Investigator] {finding}"],
+    }
 
 
 def call_log_investigator(state: InvestigationState) -> dict:
@@ -106,7 +110,11 @@ def call_log_investigator(state: InvestigationState) -> dict:
         "alert": state["alert"],
         "messages": [system, human],
     })
-    return {"log_finding": result["finding"]}
+    finding = result["finding"]
+    return {
+        "log_finding": finding,
+        "findings": [f"[Log Investigator] {finding}"],
+    }
 
 
 def synthesize(state: InvestigationState) -> dict:
@@ -126,10 +134,10 @@ def synthesize(state: InvestigationState) -> dict:
 Pod: {state['pod_name']} | Namespace: {state['namespace']}{feedback_context}
 
 Deploy Investigator's finding:
-{state['deploy_finding']}
+{state.get('deploy_finding', '')}
 
 Log Investigator's finding:
-{state['log_finding']}
+{state.get('log_finding', '')}
 
 Be SKEPTICAL. A symptom (pod crashed) is not a root cause.
 Only give HIGH confidence (0.8+) if the findings together trace back
@@ -176,8 +184,9 @@ def human_review(state: InvestigationState) -> dict:
         "question": "Review the proposed root cause. Type 'approve' to accept, 'override: <text>' to set manually, or enter feedback to re-investigate.",
         "proposed_root_cause": state["root_cause"],
         "confidence": state["confidence"],
-        "deploy_finding": state["deploy_finding"],
-        "log_finding": state["log_finding"],
+        "deploy_finding": state.get("deploy_finding", ""),
+        "log_finding": state.get("log_finding", ""),
+        "findings": state.get("findings", []),
         "pod_name": state["pod_name"],
         "namespace": state["namespace"],
         "iterations_run": state["iteration_count"],

@@ -7,6 +7,9 @@
 
 > **Agentic Kubernetes Investigation Assistant** — autonomous multi-agent root cause analysis using LangGraph, FastAPI, Prometheus observability, and a Rich CLI.
 
+# K8s Copilot: Agentic Kubernetes On-Call Assistant
+![K8s Copilot CLI Demo]()
+
 ---
 
 ##  What Problem Does This Solve?

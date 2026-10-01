@@ -129,6 +129,7 @@ def investigate(
         "pod_name": pod_name,
         "deploy_finding": "",
         "log_finding": "",
+        "findings": [],
         "iteration_count": 0,
         "confidence": 0.0,
         "root_cause": "",
